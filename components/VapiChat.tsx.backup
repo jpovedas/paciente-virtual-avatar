@@ -1,0 +1,387 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import Vapi from '@vapi-ai/web';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import SimliAvatar from './SimliAvatar';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+}
+
+interface VapiChatProps {
+  caseData: {
+    id: string;
+    title: string;
+    caseContext: string;
+    avatarGender: 'male' | 'female';
+  };
+  userId: string;
+}
+
+export default function VapiChat({ caseData, userId }: VapiChatProps) {
+  const [isCallActive, setIsCallActive] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [callDuration, setCallDuration] = useState(0);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [remoteAudioStream, setRemoteAudioStream] = useState<MediaStream | null>(null);
+  
+  const vapiRef = useRef<Vapi | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const publicKey = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY;
+    if (!publicKey) {
+      console.error('VAPI_PUBLIC_KEY no está configurado');
+      return;
+    }
+
+    vapiRef.current = new Vapi(publicKey);
+    vapiRef.current.on('call-start', handleCallStart);
+    vapiRef.current.on('call-end', handleCallEnd);
+    vapiRef.current.on('speech-start', () => setIsSpeaking(true));
+    vapiRef.current.on('speech-end', () => setIsSpeaking(false));
+    vapiRef.current.on('message', handleMessage);
+    vapiRef.current.on('error', handleError);
+    
+    // Capturar el stream de audio para Simli
+    vapiRef.current.on('track', (track: MediaStreamTrack, stream: MediaStream) => {
+      if (track.kind === 'audio') {
+        console.log('Audio track recibido para Simli');
+        setRemoteAudioStream(stream);
+      }
+    });
+
+    return () => {
+      if (vapiRef.current) vapiRef.current.stop();
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const createSession = async () => {
+    try {
+      const sessionRef = await addDoc(collection(db, 'sessions'), {
+        userId,
+        caseId: caseData.id,
+        messages: [],
+        startTime: serverTimestamp(),
+        status: 'active',
+      });
+      setSessionId(sessionRef.id);
+      return sessionRef.id;
+    } catch (error) {
+      console.error('Error creating session:', error);
+      return null;
+    }
+  };
+
+  const handleCallStart = () => {
+    setIsCallActive(true);
+    timerRef.current = setInterval(() => setCallDuration(prev => prev + 1), 1000);
+  };
+
+  const handleCallEnd = async () => {
+    setIsCallActive(false);
+    setIsSpeaking(false);
+    setRemoteAudioStream(null);
+    if (timerRef.current) clearInterval(timerRef.current);
+    
+    if (sessionId) {
+      await updateDoc(doc(db, 'sessions', sessionId), {
+        endTime: serverTimestamp(),
+        duration: callDuration,
+        status: 'completed',
+      }).catch(err => console.error('Error updating session:', err));
+    }
+  };
+
+  const handleMessage = (message: any) => {
+    if (message.type === 'transcript' && message.transcriptType === 'final') {
+      const newMessage: Message = {
+        role: message.role,
+        content: message.transcript,
+        timestamp: Date.now(),
+      };
+      
+      setMessages(prev => {
+        // Evitar duplicados
+        if (prev.length > 0) {
+          const lastMsg = prev[prev.length - 1];
+          if (lastMsg.content === newMessage.content && lastMsg.role === newMessage.role) {
+            return prev;
+          }
+        }
+        
+        const updated = [...prev, newMessage];
+        if (sessionId) {
+          updateDoc(doc(db, 'sessions', sessionId), { messages: updated })
+            .catch(err => console.error('Error saving message:', err));
+        }
+        return updated;
+      });
+    }
+  };
+
+  const handleError = (error: any) => {
+    console.error('Vapi error:', error);
+  };
+
+  const startCall = async () => {
+    if (!vapiRef.current) return;
+
+    try {
+      await createSession();
+      await vapiRef.current.start({
+        model: {
+          provider: 'openai',
+          model: 'gpt-4o',
+          messages: [{
+            role: 'system',
+            content: `Eres un paciente real en consulta médica.
+
+CASO: ${caseData.caseContext}
+
+REGLAS:
+- Responde en primera persona
+- Lenguaje natural y coloquial
+- MUY BREVE: 1-2 oraciones máximo
+- Di "doctor" al inicio y ocasionalmente cuando estés preocupado
+- NO digas "doctor" en cada respuesta
+- Muestra emociones pero de forma SUTIL, no exagerada
+- Si algo duele MUCHO cuando te tocan, di "ay" o "duele ahí" - pero solo una vez, no exageres
+- Si el dolor es moderado, solo menciona que duele, sin exclamaciones
+- NO uses términos médicos
+- Si no sabes algo, di "no sé"
+- Responde directo y breve
+
+EJEMPLOS CORRECTOS:
+P: ¿Desde cuándo tiene el dolor?
+R: Desde anoche, como a las 8.
+
+P: ¿Dónde le duele? (tocando abdomen)
+R: Ay, ahí sí me duele.
+
+P: ¿Qué tan fuerte es el dolor?
+R: Es fuerte, como un 8 de 10.
+
+P: ¿Es algo grave?
+R: No sé doctor, me preocupa.
+
+P: ¿Ha tenido fiebre?
+R: No, no he tenido.
+
+Sé natural y sutil. Usa exclamaciones de dolor solo cuando sea realmente necesario.`
+          }],
+          temperature: 0.7,
+        },
+        voice: {
+          provider: 'azure',
+          voiceId: caseData.avatarGender === 'male' ? 'es-MX-JorgeNeural' : 'es-MX-DaliaNeural',
+        },
+        transcriber: {
+          provider: 'deepgram',
+          model: 'nova-2',
+          language: 'es',
+        },
+        firstMessage: 'Hola doctor, buenos días.',
+      });
+    } catch (error: any) {
+      console.error('Error starting call:', error);
+      alert(`Error: ${error.message}`);
+    }
+  };
+
+  const endCall = () => {
+    if (vapiRef.current) vapiRef.current.stop();
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'linear-gradient(to bottom right, #1e293b, #334155)' }}>
+      {/* Header */}
+      <div style={{ background: 'linear-gradient(to right, #2563eb, #4f46e5)', color: 'white', padding: '1.5rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: '3rem', height: '3rem', background: 'rgba(255,255,255,0.2)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>
+            {caseData.avatarGender === 'male' ? '👨' : '👩'}
+          </div>
+          <div>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>{caseData.title}</h2>
+            <p style={{ fontSize: '0.875rem', opacity: 0.9, margin: 0 }}>Consulta Virtual</p>
+          </div>
+        </div>
+        {isCallActive && (
+          <div style={{ background: 'rgba(239, 68, 68, 0.3)', padding: '0.5rem 1rem', borderRadius: '9999px', border: '1px solid rgba(252, 165, 165, 0.5)' }}>
+            <span style={{ fontFamily: 'monospace', fontSize: '0.875rem', fontWeight: 'bold' }}>{formatDuration(callDuration)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Left Panel */}
+        <div style={{ width: '40%', background: 'linear-gradient(to bottom right, #1e293b, #334155)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ 
+              width: '12rem', 
+              height: '12rem', 
+              borderRadius: '50%', 
+              margin: '0 auto 2rem',
+              overflow: 'hidden',
+              boxShadow: isCallActive
+                ? isSpeaking
+                  ? '0 0 40px rgba(16, 185, 129, 0.5)'
+                  : '0 0 40px rgba(59, 130, 246, 0.5)'
+                : 'none',
+              transition: 'all 0.5s',
+              position: 'relative'
+            }}>
+              {isCallActive ? (
+                <SimliAvatar
+                  faceId={caseData.avatarGender === 'male' 
+                    ? process.env.NEXT_PUBLIC_SIMLI_MALE_FACE_ID || '5514e24d-6086-46a3-ace4-6a7264e5cb7c'
+                    : process.env.NEXT_PUBLIC_SIMLI_FEMALE_FACE_ID || 'tmp9i8bbq7c'
+                  }
+                  isActive={isCallActive}
+                  audioStream={remoteAudioStream || undefined}
+                />
+              ) : (
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  background: 'linear-gradient(to bottom right, #475569, #334155)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '5rem',
+                  borderRadius: '50%'
+                }}>
+                  {caseData.avatarGender === 'male' ? '👨' : '👩'}
+                </div>
+              )}
+            </div>
+
+            <div style={{ color: 'white' }}>
+              {!isCallActive ? (
+                <div>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Listo para iniciar</h3>
+                  <p style={{ color: '#cbd5e1', fontSize: '0.875rem' }}>Presiona el botón para comenzar</p>
+                </div>
+              ) : isSpeaking ? (
+                <div>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#6ee7b7' }}>Paciente hablando</h3>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem', marginTop: '1rem' }}>
+                    {[1, 2, 3].map(i => (
+                      <div key={i} style={{ width: '0.5rem', height: '2rem', background: '#6ee7b7', borderRadius: '0.25rem', animation: 'pulse 0.8s infinite', animationDelay: `${i * 0.1}s` }} />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#93c5fd' }}>Escuchando...</h3>
+                  <p style={{ color: '#cbd5e1', fontSize: '0.875rem', marginTop: '0.5rem' }}>Puedes hablar ahora</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Panel */}
+        <div style={{ width: '60%', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '2rem' }}>
+            {messages.length === 0 ? (
+              <div style={{ textAlign: 'center', marginTop: '5rem', color: '#64748b' }}>
+                <p style={{ fontSize: '1.125rem', fontWeight: '500', marginBottom: '0.5rem' }}>Transcripción en tiempo real</p>
+                <p style={{ fontSize: '0.875rem' }}>La conversación aparecerá aquí</p>
+              </div>
+            ) : (
+              <div>
+                {messages.map((msg, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '1rem' }}>
+                    <div style={{ 
+                      maxWidth: '75%', 
+                      padding: '1rem', 
+                      borderRadius: '1rem',
+                      background: msg.role === 'user' ? 'linear-gradient(to bottom right, #3b82f6, #2563eb)' : 'white',
+                      color: msg.role === 'user' ? 'white' : '#1e293b',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                    }}>
+                      <p style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '0.5rem', opacity: 0.8 }}>
+                        {msg.role === 'user' ? '🩺 Tú' : '👤 Paciente'}
+                      </p>
+                      <p style={{ fontSize: '0.875rem', margin: 0 }}>{msg.content}</p>
+                    </div>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+
+          {/* Controls */}
+          <div style={{ padding: '2rem', background: 'white', borderTop: '1px solid #e2e8f0' }}>
+            {!isCallActive ? (
+              <button
+                onClick={startCall}
+                style={{ 
+                  width: '100%', 
+                  background: 'linear-gradient(to right, #16a34a, #15803d)', 
+                  color: 'white', 
+                  fontWeight: 'bold', 
+                  padding: '1rem', 
+                  borderRadius: '0.75rem', 
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  boxShadow: '0 10px 15px -3px rgba(16, 185, 129, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                📞 Iniciar Consulta
+              </button>
+            ) : (
+              <button
+                onClick={endCall}
+                style={{ 
+                  width: '100%', 
+                  background: 'linear-gradient(to right, #dc2626, #b91c1c)', 
+                  color: 'white', 
+                  fontWeight: 'bold', 
+                  padding: '1rem', 
+                  borderRadius: '0.75rem', 
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  boxShadow: '0 10px 15px -3px rgba(239, 68, 68, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                ❌ Finalizar Consulta
+              </button>
+            )}
+            <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#64748b', marginTop: '0.75rem' }}>
+              Habla naturalmente, la conversación es fluida
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

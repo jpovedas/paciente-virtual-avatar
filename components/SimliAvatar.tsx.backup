@@ -1,0 +1,83 @@
+'use client';
+
+import { useEffect, useRef } from 'react';
+import { SimliClient } from 'simli-client';
+
+interface SimliAvatarProps {
+  faceId: string;
+  isActive: boolean;
+  audioStream?: MediaStream;
+}
+
+export default function SimliAvatar({ faceId, isActive, audioStream }: SimliAvatarProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const simliClientRef = useRef<SimliClient | null>(null);
+
+  useEffect(() => {
+    if (!isActive || !videoRef.current || !audioRef.current) return;
+
+    const apiKey = process.env.NEXT_PUBLIC_SIMLI_API_KEY;
+    if (!apiKey) {
+      console.error('Simli API key not configured');
+      return;
+    }
+
+    // Configuración de Simli
+    const simliConfig = {
+      apiKey,
+      faceID: faceId,
+      handleSilence: true,
+      maxSessionLength: 3600,
+      maxIdleTime: 600,
+      videoRef: videoRef.current,
+      audioRef: audioRef.current,
+    };
+
+    // Inicializar cliente
+    const simliClient = new SimliClient();
+    simliClientRef.current = simliClient;
+
+    // Inicializar y conectar
+    simliClient.Initialize(simliConfig);
+    simliClient.start();
+
+    // Si hay stream de audio, conectarlo
+    if (audioStream) {
+      const audioTrack = audioStream.getAudioTracks()[0];
+      if (audioTrack) {
+        simliClient.listenToMediastreamTrack(audioTrack);
+      }
+    }
+
+    return () => {
+      simliClient.close();
+    };
+  }, [faceId, isActive]);
+
+  useEffect(() => {
+    if (audioStream && simliClientRef.current) {
+      const audioTrack = audioStream.getAudioTracks()[0];
+      if (audioTrack) {
+        simliClientRef.current.listenToMediastreamTrack(audioTrack);
+      }
+    }
+  }, [audioStream]);
+
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          borderRadius: '50%',
+        }}
+      />
+      <audio ref={audioRef} autoPlay />
+    </div>
+  );
+}
