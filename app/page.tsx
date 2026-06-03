@@ -38,19 +38,7 @@ export default function Home() {
   }, []);
 
   if (selectedCase) {
-    return (
-      <div style={{ position: 'relative' }}>
-        <button
-          onClick={() => setSelectedCase(null)}
-          style={{ position: 'absolute', top: '0.875rem', left: '1rem', zIndex: 50, display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#cbd5e1', padding: '0.45rem 1rem', borderRadius: '9999px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', backdropFilter: 'blur(12px)', transition: 'all 0.2s' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.14)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-        >
-          ← Sala de espera
-        </button>
-        <VapiChat caseData={selectedCase} userId="demo_user" />
-      </div>
-    );
+    return <VapiChat caseData={selectedCase} userId="demo_user" onBack={() => setSelectedCase(null)} />;
   }
 
   return (

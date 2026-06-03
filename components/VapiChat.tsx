@@ -37,6 +37,7 @@ interface VapiChatProps {
     caseContext: string; avatarGender: 'male' | 'female'; recursos?: Recurso[];
   };
   userId: string;
+  onBack?: () => void;
 }
 
 /* ── System prompt ── */
@@ -157,7 +158,7 @@ const DIFF_COLOR: Record<string, string> = {
 };
 
 /* ══════════════════════════════════════════════ */
-export default function VapiChat({ caseData, userId }: VapiChatProps) {
+export default function VapiChat({ caseData, userId, onBack }: VapiChatProps) {
   const [isCallActive, setIsCallActive] = useState(false);
   const [isStarting, setIsStarting]     = useState(false);
   const [messages, setMessages]         = useState<Message[]>([]);
@@ -167,6 +168,7 @@ export default function VapiChat({ caseData, userId }: VapiChatProps) {
   const [isThinking, setIsThinking]     = useState(false);
   const [callEnded, setCallEnded]       = useState(false);
   const [requestedNames, setRequestedNames] = useState<Set<string>>(new Set());
+  const pendingResourcesRef = useRef<Recurso[]>([]);
 
   const vapiRef        = useRef<Vapi | null>(null);
   const timerRef       = useRef<NodeJS.Timeout | null>(null);
@@ -186,7 +188,17 @@ export default function VapiChat({ caseData, userId }: VapiChatProps) {
     vapiRef.current = new Vapi(key);
     vapiRef.current.on('call-start',   handleCallStart);
     vapiRef.current.on('call-end',     handleCallEnd);
-    vapiRef.current.on('speech-start', () => { setIsSpeaking(true); setIsThinking(false); });
+    vapiRef.current.on('speech-start', () => {
+      setIsSpeaking(true); setIsThinking(false);
+      // Mostrar recursos pendientes cuando el paciente empieza a hablar
+      if (pendingResourcesRef.current.length > 0) {
+        pendingResourcesRef.current.forEach(r => {
+          setRequestedNames(prev => new Set(prev).add(r.nombre));
+          setMessages(prev => [...prev, { role: 'resource', content: r.nombre, timestamp: Date.now(), resource: r }]);
+        });
+        pendingResourcesRef.current = [];
+      }
+    });
     vapiRef.current.on('speech-end',   () => setIsSpeaking(false));
     vapiRef.current.on('message',      handleMessage);
     vapiRef.current.on('error',        () => {});
@@ -221,7 +233,26 @@ export default function VapiChat({ caseData, userId }: VapiChatProps) {
   };
 
   const handleMessage = (message: any) => {
-    if (message.type === 'transcript' && message.transcriptType === 'final' && message.role === 'user') setIsThinking(true);
+    if (message.type === 'transcript' && message.transcriptType === 'final' && message.role === 'user') {
+      setIsThinking(true);
+      // Encolar recurso como pendiente si el médico lo menciona
+      const text = message.transcript?.toLowerCase() ?? '';
+      const recursos = caseData.recursos ?? [];
+      recursos.forEach(r => {
+        if (requestedNames.has(r.nombre)) return;
+        if (pendingResourcesRef.current.find(p => p.nombre === r.nombre)) return;
+        const keywords = r.nombre.toLowerCase().split(/[\s,\/\(\)]+/).filter(k => k.length > 3);
+        const mentioned = keywords.some(kw => text.includes(kw));
+        if (mentioned) {
+          pendingResourcesRef.current = [...pendingResourcesRef.current, r];
+          // Notificar al AI para que responda naturalmente
+          vapiRef.current?.send({
+            type: 'add-message',
+            message: { role: 'system', content: `El médico acaba de solicitar el examen: "${r.nombre}". Responde muy brevemente ("Aquí tiene, doctor" o similar). NO menciones valores.` }
+          } as any);
+        }
+      });
+    }
     if (message.type !== 'transcript' || message.transcriptType !== 'final') return;
     const incoming: Message = { role: message.role, content: message.transcript.trim(), timestamp: Date.now() };
     if (!incoming.content) return;
@@ -240,14 +271,15 @@ export default function VapiChat({ caseData, userId }: VapiChatProps) {
     }, 1200);
   };
 
-  /* ── Request a resource visually ── */
+  /* ── Request a resource visually (botón manual) ── */
   const requestResource = (recurso: Recurso) => {
     if (requestedNames.has(recurso.nombre)) return;
+    if (pendingResourcesRef.current.find(p => p.nombre === recurso.nombre)) return;
     setRequestedNames(prev => new Set(prev).add(recurso.nombre));
     setMessages(prev => [...prev, { role: 'resource', content: recurso.nombre, timestamp: Date.now(), resource: recurso }]);
     vapiRef.current?.send({
       type: 'add-message',
-      message: { role: 'system', content: `El médico acaba de solicitar el examen: "${recurso.nombre}". Responde muy brevemente ("Aquí tiene, doctor" o similar). NO menciones valores ni resultados.` }
+      message: { role: 'system', content: `El médico solicitó ver: "${recurso.nombre}". Responde brevemente ("Aquí tiene, doctor"). NO menciones valores.` }
     } as any);
   };
 
@@ -282,6 +314,11 @@ export default function VapiChat({ caseData, userId }: VapiChatProps) {
       {/* ── Header ── */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.875rem 1.75rem', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(20px)', flexShrink: 0, zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+          {onBack && (
+            <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '0.35rem 0.875rem', borderRadius: '9999px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', whiteSpace: 'nowrap' }}>
+              ← Sala de espera
+            </button>
+          )}
           <div style={{ width: '2.25rem', height: '2.25rem', borderRadius: '0.625rem', background: 'linear-gradient(135deg, #3b82f6, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>
             {caseData.avatarGender === 'male' ? '👨' : '👩'}
           </div>
@@ -368,26 +405,6 @@ export default function VapiChat({ caseData, userId }: VapiChatProps) {
 
           {/* ── Controls ── */}
           <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)' }}>
-            {/* Recursos */}
-            {recursos.length > 0 && isCallActive && (
-              <div style={{ marginBottom: '0.875rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '0.75rem', padding: '0.75rem 1rem' }}>
-                <p style={{ fontSize: '0.62rem', color: '#475569', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.5rem' }}>Exámenes disponibles</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                  {recursos.map((r, i) => {
-                    const done = requestedNames.has(r.nombre);
-                    return (
-                      <button key={i} onClick={() => requestResource(r)} disabled={done}
-                        style={{ fontSize: '0.72rem', fontWeight: '600', padding: '0.3rem 0.75rem', borderRadius: '9999px', border: `1px solid ${done ? 'rgba(16,185,129,0.3)' : 'rgba(99,102,241,0.35)'}`, background: done ? 'rgba(16,185,129,0.1)' : 'rgba(99,102,241,0.1)', color: done ? '#6ee7b7' : '#a5b4fc', cursor: done ? 'default' : 'pointer', transition: 'all 0.2s' }}
-                        onMouseEnter={e => { if (!done) e.currentTarget.style.background = 'rgba(99,102,241,0.2)'; }}
-                        onMouseLeave={e => { if (!done) e.currentTarget.style.background = 'rgba(99,102,241,0.1)'; }}
-                      >
-                        {done ? '✓ ' : ''}{r.nombre}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
             {!isCallActive ? (
               <button onClick={startCall} disabled={isStarting} style={{ width: '100%', background: isStarting ? 'rgba(22,163,74,0.4)' : 'linear-gradient(135deg, #16a34a, #059669)', color: 'white', fontWeight: '700', fontSize: '0.95rem', padding: '0.9rem', borderRadius: '0.875rem', border: 'none', cursor: isStarting ? 'not-allowed' : 'pointer', boxShadow: isStarting ? 'none' : '0 8px 24px rgba(16,185,129,0.25)', transition: 'all 0.2s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.625rem' }}
                 onMouseEnter={e => { if (!isStarting) e.currentTarget.style.boxShadow = '0 12px 28px rgba(16,185,129,0.4)'; }}
