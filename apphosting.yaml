@@ -1,0 +1,45 @@
+runConfig:
+  minInstances: 0
+
+env:
+  # Variables públicas (NEXT_PUBLIC_*)
+  - variable: NEXT_PUBLIC_VAPI_PUBLIC_KEY
+    value: "0addf681-d4f8-4262-a976-fd3f31ecc7f1"
+    availability: [BUILD, RUNTIME]
+
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyDHjGUosvXZp8Oo5TcZAgoVXCCo8A61Z8A"
+    availability: [BUILD, RUNTIME]
+
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "paciente-virtual-avatar.firebaseapp.com"
+    availability: [BUILD, RUNTIME]
+
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "paciente-virtual-avatar-e86ce"
+    availability: [BUILD, RUNTIME]
+
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "paciente-virtual-avatar.firebasestorage.app"
+    availability: [BUILD, RUNTIME]
+
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "93155755963"
+    availability: [BUILD, RUNTIME]
+
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:93155755963:web:25b28a02ce2d468b4f269e"
+    availability: [BUILD, RUNTIME]
+
+  # Secrets (claves privadas)
+  - variable: ANTHROPIC_API_KEY
+    secret: ANTHROPIC_API_KEY
+    availability: [RUNTIME]
+
+  - variable: DID_API_KEY
+    secret: DID_API_KEY
+    availability: [RUNTIME]
+
+  - variable: CARTESIA_API_KEY
+    secret: CARTESIA_API_KEY
+    availability: [RUNTIME]
