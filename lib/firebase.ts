@@ -5,7 +5,7 @@ import { getAuth } from 'firebase/auth';
 const firebaseConfig = {
   apiKey: "AIzaSyDHjGUosvXZp8Oo5TcZAgoVXCCo8A61Z8A",
   authDomain: "paciente-virtual-avatar.firebaseapp.com",
-  projectId: "paciente-virtual-avatar",
+  projectId: "paciente-virtual-avatar-e86ce",
   storageBucket: "paciente-virtual-avatar.firebasestorage.app",
   messagingSenderId: "93155755963",
   appId: "1:93155755963:web:25b28a02ce2d468b4f269e"

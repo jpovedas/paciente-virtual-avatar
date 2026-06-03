@@ -62,7 +62,13 @@ export default function SimliAvatar({ faceId, gender, isActive }: SimliAvatarPro
       model: 'fasttalk',
     });
 
-    await simli.start();
+    try {
+      await simli.start();
+    } catch (err) {
+      console.warn('Simli connection failed:', err);
+      setStatus('failed');
+      simliRef.current = null;
+    }
   };
 
   return (
@@ -95,24 +101,43 @@ export default function SimliAvatar({ faceId, gender, isActive }: SimliAvatarPro
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '0.75rem',
+          gap: '0.5rem',
+          background: gender === 'male'
+            ? 'linear-gradient(135deg, #1e3a5f, #2563eb44)'
+            : 'linear-gradient(135deg, #3b1f5e, #7c3aed44)',
         }}>
-          <span style={{ fontSize: '4rem' }}>{gender === 'male' ? '👨' : '👩'}</span>
+          <div style={{
+            width: '70%',
+            height: '70%',
+            borderRadius: '50%',
+            background: gender === 'male'
+              ? 'linear-gradient(135deg, #1d4ed8, #3b82f6)'
+              : 'linear-gradient(135deg, #6d28d9, #a78bfa)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '3.5rem',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+          }}>
+            {gender === 'male' ? '👨' : '👩'}
+          </div>
           {status === 'connecting' && (
             <div style={{
-              width: '1.25rem',
-              height: '1.25rem',
-              border: '3px solid rgba(96, 165, 250, 0.3)',
-              borderTop: '3px solid #60a5fa',
+              position: 'absolute',
+              bottom: '12%',
+              width: '1rem',
+              height: '1rem',
+              border: '2px solid rgba(255,255,255,0.3)',
+              borderTop: '2px solid white',
               borderRadius: '50%',
               animation: 'spin 1s linear infinite',
             }} />
           )}
-          {status === 'failed' && (
-            <span style={{ fontSize: '0.75rem', color: '#fca5a5' }}>Sin conexión</span>
-          )}
         </div>
       )}
+      <style jsx>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }
