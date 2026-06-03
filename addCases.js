@@ -158,6 +158,49 @@ COMPORTAMIENTO:
 - Habla despacio por el dolor
 - Molesta con luz y ruido
 - Busca alivio urgente`
+  },
+  {
+    title: "Dificultad respiratoria y fiebre",
+    specialty: "Medicina Interna",
+    difficulty: "Moderado",
+    avatarGender: "male",
+    caseContext: `PERFIL:
+- Carlos Mendoza, 54 años, contador, casado
+
+MOTIVO DE CONSULTA:
+Llevo 3 días con fiebre y me cuesta respirar, cada vez peor
+
+SÍNTOMAS:
+- Fiebre desde hace 3 días (sensación de mucho calor, escalofríos)
+- Tos con flema amarilla-verdosa
+- Dificultad para respirar al caminar o subir escaleras
+- Dolor en el pecho lado derecho al respirar profundo
+- Cansancio extremo, no puede trabajar
+- Poco apetito
+
+ANTECEDENTES:
+- Diabético tipo 2 hace 8 años, controlado con medicamento
+- Fumador (1 cajetilla/día por 20 años, dejó hace 3 años)
+- No vacuna de influenza este año
+- No hospitalizaciones previas
+
+COMPORTAMIENTO:
+- Preocupado, se ve fatigado y habla despacio
+- Le cuesta respirar al hablar oraciones largas
+- Niega síntomas hasta que se le insiste`,
+    recursos: [
+      { tipo: "Laboratorio", nombre: "Glucosa en ayunas", valor: "287", unidad: "mg/dL", referencia: "70-100 mg/dL", notas: "Muestra tomada al ingreso" },
+      { tipo: "Laboratorio", nombre: "HbA1c", valor: "8.9", unidad: "%", referencia: "< 5.7 %" },
+      { tipo: "Laboratorio", nombre: "Leucocitos", valor: "16400", unidad: "cel/μL", referencia: "4500-11000 cel/μL", notas: "Neutrofilia 84%, desviación a la izquierda" },
+      { tipo: "Laboratorio", nombre: "PCR (Proteína C Reactiva)", valor: "142", unidad: "mg/L", referencia: "< 5 mg/L" },
+      { tipo: "Laboratorio", nombre: "Saturación O₂", valor: "91", unidad: "%", referencia: "95-100 %", notas: "Sin oxígeno suplementario, en reposo" },
+      { tipo: "Signos vitales", nombre: "Temperatura", valor: "38.9", unidad: "°C", referencia: "36.5-37.5 °C" },
+      { tipo: "Signos vitales", nombre: "Presión arterial", valor: "148/92", unidad: "mmHg", referencia: "< 120/80 mmHg" },
+      { tipo: "Signos vitales", nombre: "Frecuencia respiratoria", valor: "24", unidad: "rpm", referencia: "12-20 rpm" },
+      { tipo: "Imagen", nombre: "Radiografía de tórax PA", imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Pneumonia_x-ray.jpg/800px-Pneumonia_x-ray.jpg", hallazgos: "Opacidad alveolar en lóbulo inferior derecho con broncograma aéreo visible, compatible con proceso neumónico. Sin derrame pleural. Silueta cardíaca normal. Campos pulmonares izquierdos sin alteraciones." },
+      { tipo: "Medicamento", nombre: "Metformina", dosis: "850 mg", frecuencia: "cada 12 horas", via: "oral", notas: "Tratamiento habitual en casa, última dosis hace 14 horas" },
+      { tipo: "Historia previa", nombre: "Antecedente tabáquico", descripcion: "Exfumador. Índice paquete-año: 20. Abandono hace 3 años. Sin diagnóstico previo de EPOC ni asma. Espirometría nunca realizada." }
+    ]
   }
 ];
 
